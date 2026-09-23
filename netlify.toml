@@ -1,0 +1,39 @@
+# Netlify configuration for the Next.js app.
+#
+# The Next.js Runtime plugin is what makes App Router features work on Netlify —
+# server components, route handlers under /api, and the image optimiser. Without
+# it, `next build` output is a static shell and every API route 404s.
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  # Next.js 16 requires Node 20.9+. Pin to 22 to match local development.
+  NODE_VERSION = "22"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# ---------------------------------------------------------------------------
+# Headers
+# ---------------------------------------------------------------------------
+
+# The API proxy routes carry the user's TeleBotHost key in a request header.
+# Never let a CDN or browser cache them.
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-store, max-age=0"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Credential material is handled entirely client-side; lock the page down.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"

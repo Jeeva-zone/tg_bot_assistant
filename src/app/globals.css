@@ -1,0 +1,183 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens — shadcn/ui compatible, expressed in oklch.
+   Light is the default; `.dark` on <html> switches the whole palette.
+--------------------------------------------------------------------------- */
+
+:root {
+  --radius: 0.65rem;
+
+  --background: oklch(0.995 0 0);
+  --foreground: oklch(0.145 0 0);
+
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+
+  --primary: oklch(0.52 0.19 258);
+  --primary-foreground: oklch(0.985 0 0);
+
+  --secondary: oklch(0.97 0.002 250);
+  --secondary-foreground: oklch(0.205 0 0);
+
+  --muted: oklch(0.968 0.002 250);
+  --muted-foreground: oklch(0.552 0.015 250);
+
+  --accent: oklch(0.968 0.004 250);
+  --accent-foreground: oklch(0.205 0 0);
+
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success: oklch(0.63 0.17 150);
+  --success-foreground: oklch(0.985 0 0);
+
+  --warning: oklch(0.75 0.16 75);
+  --warning-foreground: oklch(0.205 0 0);
+
+  --border: oklch(0.922 0.004 250);
+  --input: oklch(0.922 0.004 250);
+  --ring: oklch(0.52 0.19 258);
+
+  --chart-1: oklch(0.52 0.19 258);
+  --chart-2: oklch(0.63 0.17 150);
+  --chart-3: oklch(0.75 0.16 75);
+  --chart-4: oklch(0.6 0.2 320);
+  --chart-5: oklch(0.65 0.18 200);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+
+  --card: oklch(0.19 0.003 250);
+  --card-foreground: oklch(0.985 0 0);
+
+  --popover: oklch(0.19 0.003 250);
+  --popover-foreground: oklch(0.985 0 0);
+
+  --primary: oklch(0.65 0.17 258);
+  --primary-foreground: oklch(0.145 0 0);
+
+  --secondary: oklch(0.26 0.005 250);
+  --secondary-foreground: oklch(0.985 0 0);
+
+  --muted: oklch(0.26 0.005 250);
+  --muted-foreground: oklch(0.7 0.015 250);
+
+  --accent: oklch(0.28 0.006 250);
+  --accent-foreground: oklch(0.985 0 0);
+
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+
+  --success: oklch(0.7 0.16 150);
+  --success-foreground: oklch(0.145 0 0);
+
+  --warning: oklch(0.8 0.15 75);
+  --warning-foreground: oklch(0.145 0 0);
+
+  --border: oklch(0.28 0.005 250);
+  --input: oklch(0.3 0.005 250);
+  --ring: oklch(0.65 0.17 258);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Keep focus visible for keyboard users without the default ugly ring. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Thin, unobtrusive scrollbars for the dense builder panels. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+  }
+
+  /* Monospace block for generated TBL code. */
+  .code-block {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", monospace;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    tab-size: 2;
+  }
+
+  .grid-pattern {
+    background-image:
+      linear-gradient(to right, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--border) 55%, transparent) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+}
