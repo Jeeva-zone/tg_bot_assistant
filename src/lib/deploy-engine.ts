@@ -14,15 +14,29 @@
  * system and can get the account throttled. The pacer below watches the
  * documented `X-RateLimit-*-Minute` headers and parks the queue before it gets
  * anywhere near a 429.
+ *
+ * Two entry points share all of this machinery:
+ *  - `deployProject` — compiles the command-list builder, then deploys.
+ *  - `deployCompiledCommands` — deploys commands produced by the workflow compiler.
  */
 
-import type {
-  BotProject,
-  DeploymentLogLine,
-} from "@/types/builder";
-import type { BotListItem, TbhRateLimit } from "@/types/telebothost";
+import type { BotProject, DeploymentLogLine } from "@/types/builder";
+import type { BotListItem, CreateCommandRequest, TbhRateLimit } from "@/types/telebothost";
 import { compileProject } from "./compiler";
 import * as api from "./client-api";
+
+/**
+ * A problem to echo into the deployment log.
+ *
+ * Deliberately shaped so both compilers can feed it without either having to know
+ * about the other's types: `compiler.ts` emits `{ level, message, nodeLabel }` and
+ * the workflow compiler's issues are mapped into this at the call site.
+ */
+export interface DeployDiagnostic {
+  level: "error" | "warning";
+  message: string;
+  nodeLabel?: string;
+}
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -66,18 +80,14 @@ class RatePacer {
     this.lastRequestAt = Date.now();
   }
 
-  /** React to the quota headers on a response. */
+  /** React to the quota headers on a response. Returns ms we are now blocked for. */
   observe(rateLimit?: TbhRateLimit): number {
     if (!rateLimit) return 0;
 
     const remaining = rateLimit.remainingMinute;
     const resetAt = rateLimit.resetMinute;
 
-    if (
-      typeof remaining === "number" &&
-      typeof resetAt === "number" &&
-      remaining <= 2
-    ) {
+    if (typeof remaining === "number" && typeof resetAt === "number" && remaining <= 2) {
       const untilMs = resetAt * 1000 + 400;
       if (untilMs > Date.now()) {
         this.blockedUntil = untilMs;
@@ -93,23 +103,6 @@ class RatePacer {
   }
 }
 
-export interface DeployOptions {
-  apiKey: string;
-  botToken: string;
-  /** Display name for the bot entry on TeleBotHost. */
-  botName: string;
-  project: BotProject;
-  /** Reuse an existing TeleBotHost bot with the same username instead of creating one. */
-  reuseExistingBot: boolean;
-  /** Wipe existing commands first, so the deployed state matches the builder exactly. */
-  clearExistingCommands: boolean;
-  /** Flip the bot to running once commands are in place. */
-  startAfterDeploy: boolean;
-  onLog: (line: DeploymentLogLine) => void;
-  onProgress?: (completed: number, total: number) => void;
-  signal?: AbortSignal;
-}
-
 export interface DeployOutcome {
   success: boolean;
   botId?: number;
@@ -121,12 +114,49 @@ export interface DeployOutcome {
   rateLimit?: TbhRateLimit;
 }
 
-export async function deployProject(options: DeployOptions): Promise<DeployOutcome> {
+/** Options shared by both entry points. */
+export interface DeployRunOptions {
+  apiKey: string;
+  botToken: string;
+  /** Display name for the bot entry on TeleBotHost. */
+  botName: string;
+  commands: CreateCommandRequest[];
+  /** Compiler diagnostics to echo into the log. */
+  diagnostics: DeployDiagnostic[];
+  /** When true the run is refused before any request is made. */
+  hasErrors: boolean;
+  /** Reuse an existing TeleBotHost bot with the same username instead of creating one. */
+  reuseExistingBot: boolean;
+  /** Wipe existing commands first, so the deployed state matches the editor exactly. */
+  clearExistingCommands: boolean;
+  /** Flip the bot to running once commands are in place. */
+  startAfterDeploy: boolean;
+  onLog: (line: DeploymentLogLine) => void;
+  onProgress?: (completed: number, total: number) => void;
+  signal?: AbortSignal;
+}
+
+/** Options for the command-list builder, which compiles internally. */
+export interface DeployOptions extends Omit<DeployRunOptions, "commands" | "diagnostics" | "hasErrors"> {
+  project: BotProject;
+}
+
+// ---------------------------------------------------------------------------
+// Core deployment sequence
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate credentials, register or reuse the bot, upload every command, and
+ * optionally start it. Shared by both entry points.
+ */
+export async function deployCompiledCommands(options: DeployRunOptions): Promise<DeployOutcome> {
   const {
     apiKey,
     botToken,
     botName,
-    project,
+    commands,
+    diagnostics,
+    hasErrors,
     reuseExistingBot,
     clearExistingCommands,
     startAfterDeploy,
@@ -137,25 +167,21 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
 
   const startedAt = Date.now();
   const pacer = new RatePacer();
+  const elapsed = () => Date.now() - startedAt;
 
   const log = (level: DeploymentLogLine["level"], message: string) =>
     onLog({ at: new Date().toISOString(), level, message });
 
-  const elapsed = () => Date.now() - startedAt;
-
   try {
-    // -- 1. Compile ---------------------------------------------------------
-    log("info", "Compiling the visual builder into TeleBotHost commands…");
-    const compiled = compileProject(project);
-
-    for (const diagnostic of compiled.diagnostics) {
+    // -- 1. Diagnostics -----------------------------------------------------
+    for (const diagnostic of diagnostics) {
       log(
         diagnostic.level === "error" ? "error" : "warn",
         `${diagnostic.nodeLabel ? `[${diagnostic.nodeLabel}] ` : ""}${diagnostic.message}`,
       );
     }
 
-    if (compiled.hasErrors) {
+    if (hasErrors) {
       return {
         success: false,
         commandCount: 0,
@@ -164,12 +190,7 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
       };
     }
 
-    log(
-      "success",
-      `Compiled ${compiled.commands.length} command(s) from ${compiled.stats.nodeCount} builder node(s)` +
-        (compiled.stats.skipped > 0 ? `, ${compiled.stats.skipped} disabled and skipped` : "") +
-        ".",
-    );
+    log("success", `Compiled ${commands.length} command(s) ready to upload.`);
 
     // -- 2. Verify the bot token with Telegram ------------------------------
     log("info", "Verifying the bot token with Telegram…");
@@ -210,14 +231,13 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
 
     // -- 4. Find or create the bot -----------------------------------------
     let bot = existingBots.find(
-      (candidate) =>
-        candidate.bot_username?.toLowerCase() === botUsername.toLowerCase(),
+      (candidate) => candidate.bot_username?.toLowerCase() === botUsername.toLowerCase(),
     );
 
     if (bot && !reuseExistingBot) {
       log(
         "warn",
-        `@${botUsername} is already registered on TeleBotHost as bot ${bot.bot_id}. Reusing it — set "Reuse existing bot" off to force a fresh entry instead.`,
+        `@${botUsername} is already registered as bot ${bot.bot_id}. Reusing it — turn "Reuse existing bot" off to force a fresh entry instead.`,
       );
     }
 
@@ -268,21 +288,13 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
     }
 
     // -- 6. Upload commands -------------------------------------------------
-    const total = compiled.commands.length;
+    const total = commands.length;
     let uploaded = 0;
 
-    if (total > 0) {
-      log("info", `Uploading ${total} command(s)…`);
-    }
+    if (total > 0) log("info", `Uploading ${total} command(s)…`);
 
-    for (const command of compiled.commands) {
-      const pause = pacer.observe(undefined);
-      if (pause > 0) {
-        log("warn", `Approaching the per-minute quota — pausing ${Math.ceil(pause / 1000)}s.`);
-      }
-      await pacer.wait(signal);
-
-      const result = await api.createCommand(apiKey, botId, {
+    const send = (command: CreateCommandRequest) =>
+      api.createCommand(apiKey, botId, {
         name: command.name,
         code: command.code ?? "",
         answer: command.answer ?? "",
@@ -296,6 +308,10 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
         folder: command.folder ?? "",
       });
 
+    for (const command of commands) {
+      await pacer.wait(signal);
+
+      const result = await send(command);
       const waitMs = pacer.observe(result.rateLimit);
       if (waitMs > 0) {
         log("warn", `Quota nearly exhausted — throttling for ${Math.ceil(waitMs / 1000)}s.`);
@@ -310,19 +326,7 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
           );
           await pacer.wait(signal);
 
-          const retry = await api.createCommand(apiKey, botId, {
-            name: command.name,
-            code: command.code ?? "",
-            answer: command.answer ?? "",
-            parse_mode: command.parse_mode ?? "Markdown",
-            keyboard: command.keyboard ?? "",
-            aliases: command.aliases ?? [],
-            allow_only_group: command.allow_only_group ?? false,
-            need_reply: command.need_reply ?? false,
-            case_insensitive: command.case_insensitive ?? false,
-            is_web: command.is_web ?? 0,
-            folder: command.folder ?? "",
-          });
+          const retry = await send(command);
           pacer.observe(retry.rateLimit);
 
           if (retry.ok) {
@@ -407,4 +411,24 @@ export async function deployProject(options: DeployOptions): Promise<DeployOutco
           : "Deployment failed with an unexpected error.",
     };
   }
+}
+
+/** Compile the command-list builder, then deploy it. */
+export async function deployProject(options: DeployOptions): Promise<DeployOutcome> {
+  const { project, ...rest } = options;
+
+  options.onLog({
+    at: new Date().toISOString(),
+    level: "info",
+    message: "Compiling the visual builder into TeleBotHost commands…",
+  });
+
+  const compiled = compileProject(project);
+
+  return deployCompiledCommands({
+    ...rest,
+    commands: compiled.commands,
+    diagnostics: compiled.diagnostics,
+    hasErrors: compiled.hasErrors,
+  });
 }

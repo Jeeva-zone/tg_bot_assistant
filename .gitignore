@@ -33,6 +33,10 @@ ENV/
 .coverage
 htmlcov/
 
+# ---- TypeScript ----
+# Incremental build cache — regenerated on every build, never worth committing.
+*.tsbuildinfo
+
 # ---- Node ----
 node_modules/
 npm-debug.log*

@@ -11,6 +11,7 @@
  */
 
 import type { CredentialBundle, BotProject, DeploymentRecord } from "@/types/builder";
+import type { WorkflowDocument } from "@/types/workflow";
 import { decryptJson, encryptJson, fingerprintSecret } from "./crypto";
 import { getOrCreateDeviceKey, destroyDeviceKey } from "./keystore";
 
@@ -18,6 +19,7 @@ const VAULT_KEY = "tgbot.vault.v1";
 const VAULT_META_KEY = "tgbot.vault.meta.v1";
 const PROJECT_KEY = "tgbot.project.v1";
 const DEPLOYMENTS_KEY = "tgbot.deployments.v1";
+const WORKFLOW_KEY = "tgbot.workflow.v1";
 
 interface VaultEnvelope {
   version: 1;
@@ -168,4 +170,33 @@ export function loadDeployments(): DeploymentRecord[] {
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Workflow graph — also not secret, so plain localStorage is appropriate
+// ---------------------------------------------------------------------------
+
+export function saveWorkflow(document: WorkflowDocument): void {
+  if (!hasLocalStorage()) return;
+  const stamped: WorkflowDocument = { ...document, updatedAt: new Date().toISOString() };
+  localStorage.setItem(WORKFLOW_KEY, JSON.stringify(stamped));
+}
+
+export function loadWorkflow(): WorkflowDocument | null {
+  if (!hasLocalStorage()) return null;
+  const raw = localStorage.getItem(WORKFLOW_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as WorkflowDocument;
+    // Guard against a partially-written or hand-edited document.
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearWorkflow(): void {
+  if (!hasLocalStorage()) return;
+  localStorage.removeItem(WORKFLOW_KEY);
 }

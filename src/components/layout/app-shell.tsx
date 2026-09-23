@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Menu,
+  Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/setup", label: "Credentials", icon: KeyRound, exact: false },
   { href: "/builder", label: "Bot Builder", icon: Bot, exact: false },
+  { href: "/workflow", label: "Workflow Canvas", icon: Workflow, exact: false },
   { href: "/deploy", label: "Deploy", icon: Rocket, exact: false },
   { href: "/analytics", label: "Analytics & Logs", icon: BarChart3, exact: false },
 ] as const;
