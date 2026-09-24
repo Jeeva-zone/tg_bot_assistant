@@ -11,6 +11,10 @@ import { TBH_CAPACITY, type CreateCommandRequest } from "@/types/telebothost";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// TeleBotHost calls are fast, but a slow upstream response can approach the default
+// serverless timeout. 30s covers the client-side request budget with headroom.
+export const maxDuration = 30;
+
 type Context = { params: Promise<{ botId: string }> };
 
 const ALLOWED_PARSE_MODES = new Set(["Markdown", "HTML", "MarkdownV2"]);

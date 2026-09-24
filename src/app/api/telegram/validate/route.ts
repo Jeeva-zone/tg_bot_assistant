@@ -6,6 +6,10 @@ import { isPlausibleBotToken } from "@/types/telegram";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// TeleBotHost calls are fast, but a slow upstream response can approach the default
+// serverless timeout. 30s covers the client-side request budget with headroom.
+export const maxDuration = 30;
+
 interface Body {
   botToken?: string;
 }

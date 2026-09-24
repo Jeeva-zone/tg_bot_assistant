@@ -62,8 +62,8 @@ cannot create or modify bots.
 ## How it works
 
 ```
-Browser tab                                   Netlify function          TeleBotHost
-─────────────                                 ────────────────          ───────────
+Browser tab                                   Route handler            TeleBotHost
+─────────────                                 ─────────────            ───────────
 credentials ──AES-GCM──> localStorage
       │
       └─ decrypt in memory ──x-tbh-key──>  /api/tbh/*  ──Bearer sk_──>  api.telebothost.com
@@ -85,10 +85,15 @@ scheme can. Keep the app on a trusted device.
 
 ### Deploys run in the browser, not in a function
 
-Deploying means one HTTP request per command. Netlify Functions are capped at roughly
-10–26 seconds, so a 40-command bot would be killed mid-deploy and left half-configured.
-The engine therefore drives the sequence from the client: every request stays short,
-function timeouts can't truncate the run, and progress streams into the UI in real time.
+Deploying means one HTTP request per command. A serverless function has a hard wall-clock
+limit — Netlify's synchronous cap is well under a minute — so a 40-command bot would be
+killed mid-deploy and left half-configured. The engine therefore drives the sequence from
+the client: every request stays short, function timeouts cannot truncate the run, and
+progress streams into the UI in real time.
+
+This is also why the deploy is paced against TeleBotHost's rate limits rather than fired in
+parallel: the free tier allows **15 requests per minute**, and the platform operates a
+strike system that escalates to a ban.
 
 TeleBotHost's **FREE tier allows 15 requests per minute**, so the engine reads the
 documented `X-RateLimit-*-Minute` headers and parks the queue before it can trip the
@@ -357,11 +362,12 @@ Optional. Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint (Groq, 
 Together, DeepSeek, Ollama, LM Studio) with a custom base URL. The key goes into the same
 AES-GCM vault as the other credentials and is sent per-request in a header.
 
-**Hosting caveat:** the LLM call goes through `/api/copilot/chat`, so a serverless host's
-request timeout applies. Netlify's synchronous function limit is shorter than a large
-model's response time on a big prompt, so a **smaller, faster model is the reliable
-choice** — the system prompt is deliberately compact to keep latency down. The client
-turns a 502/504 into a specific message saying so, rather than a generic network error.
+**Hosting note:** the LLM call goes through `/api/copilot/chat`, so the host's function
+timeout applies. On **Vercel this is a non-issue** — 300s per function on every plan, and the
+route declares `maxDuration = 60`. On **Netlify** the synchronous limit is shorter than a
+large model's response time on a big prompt, so a **smaller, faster model is the reliable
+choice** there; the system prompt is deliberately compact to keep latency down. The client
+turns a 502/504 into a message that says exactly this, rather than a generic network error.
 
 ---
 
@@ -496,18 +502,60 @@ asserted against, but everything *around* it can — and the payload test now gu
 
 ---
 
-## Deployment (Netlify)
+## Deployment
 
-`netlify.toml` is already configured with the Next.js Runtime plugin, a pinned Node
-version, and security headers (`no-store` on `/api/*`, a restrictive CSP, no
-framing). To ship:
+The app runs on **Vercel or Netlify** without code changes. Security headers live in
+`next.config.ts` rather than a host-specific file, so they apply identically on either.
+
+**No environment variables are required.** Credentials are supplied by each user at runtime
+and encrypted in their browser, so there is no server-side secret to configure.
+
+### Vercel (recommended)
+
+```bash
+npx vercel        # or: import the repo at vercel.com/new
+```
+
+Vercel detects Next.js natively — **no `vercel.json`, no plugin, no configuration.** Push to
+`main` and it deploys.
+
+Vercel is the better host for this app because of function timeouts. The copilot's model call
+is the slowest operation here, and Vercel allows **300s per function on every plan**, versus
+Netlify's synchronous limit of well under a minute.
+
+| Plan | Default | Max `maxDuration` |
+|---|---|---|
+| Hobby | 300s | 300s |
+| Pro / Enterprise | 300s | 800s (1800s in beta) |
+
+The route declares its own budget, so it has headroom regardless of the project default:
+
+```ts
+// src/app/api/copilot/chat/route.ts
+export const maxDuration = 60;
+```
+
+### Netlify
 
 1. Netlify → **Add new site** → **Import an existing project** → pick the repo
 2. Accept the detected build settings (`npm run build`, publish `.next`)
 3. Deploy
 
-**No environment variables are required.** Credentials are supplied by each user at
-runtime and encrypted in their browser, so there is no server-side secret to configure.
+`netlify.toml` pins Node 22 and enables `@netlify/plugin-nextjs`, which is what makes App
+Router features work there. Vercel neither needs nor reads that file.
+
+**The one caveat:** Netlify's synchronous function limit can truncate a slow model call. The
+client turns that into a specific message rather than a generic network error, and a fast
+model avoids it — but if the copilot is the main draw, deploy to Vercel.
+
+### Either way
+
+| | |
+|---|---|
+| Build command | `npm run build` |
+| Output | `.next` |
+| Node | 22 (Next.js 16 requires ≥20.9) |
+| Environment variables | none |
 
 ---
 

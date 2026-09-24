@@ -8,6 +8,19 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
+ * Vercel function duration.
+ *
+ * A model call is the slowest thing in the app. Vercel's default is 300s on every plan,
+ * so this export is mostly documentation of intent — but it guarantees headroom if the
+ * project default is ever lowered, and Hobby caps at 300s either way.
+ *
+ * Hosts with a shorter limit (Netlify's synchronous functions) will cut the request
+ * first; the client turns a 502/504 into a message that says so. Vercel is the better
+ * host for heavy copilot use.
+ */
+export const maxDuration = 60;
+
+/**
  * `POST /api/copilot/chat`
  *
  * Proxies one turn to the user's chosen model provider.

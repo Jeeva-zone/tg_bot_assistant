@@ -4,6 +4,10 @@ import { tbhApi } from "@/lib/tbh-client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// TeleBotHost calls are fast, but a slow upstream response can approach the default
+// serverless timeout. 30s covers the client-side request budget with headroom.
+export const maxDuration = 30;
+
 /**
  * `GET /api/tbh/validate`
  *
