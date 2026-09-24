@@ -7,6 +7,18 @@ Design commands, keyboards and multi-step forms in the browser — the app gener
 real TBL JavaScript, uploads it through the TeleBotHost Developer API, and starts
 your bot.
 
+## Deploy your own
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
+
+One click, no configuration, **no environment variables** — credentials are supplied by each
+user at runtime and encrypted in their browser.
+
+**Prefer Vercel.** Its function timeout is 300s on every plan including Hobby, which gives
+the AI copilot's model calls plenty of room. Netlify's synchronous limit is well under a
+minute and can truncate a slow one. → [details](#deployment)
+
 ---
 
 ## What it does
@@ -512,8 +524,12 @@ and encrypted in their browser, so there is no server-side secret to configure.
 
 ### Vercel (recommended)
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
+
+Or from the CLI:
+
 ```bash
-npx vercel        # or: import the repo at vercel.com/new
+npx vercel
 ```
 
 Vercel detects Next.js natively — **no `vercel.json`, no plugin, no configuration.** Push to
@@ -536,6 +552,10 @@ export const maxDuration = 60;
 ```
 
 ### Netlify
+
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
+
+Or manually:
 
 1. Netlify → **Add new site** → **Import an existing project** → pick the repo
 2. Accept the detected build settings (`npm run build`, publish `.next`)
