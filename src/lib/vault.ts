@@ -39,6 +39,10 @@ export interface VaultMeta {
   tbhFingerprint: string;
   botUsername: string;
   keyType: "secret" | "public" | "unknown";
+  /** Present once a copilot model is configured. */
+  llmFingerprint?: string;
+  llmProvider?: string;
+  llmModel?: string;
 }
 
 function hasLocalStorage(): boolean {
@@ -88,6 +92,14 @@ export async function saveCredentials(bundle: CredentialBundle): Promise<VaultMe
     botUsername: bundle.telegram.botUsername,
     keyType: bundle.telebothost.keyType,
   };
+
+  // Only record model details when one is actually configured, so the setup page can
+  // tell "no model" apart from "model with an unreadable key".
+  if (bundle.llm?.apiKey) {
+    meta.llmFingerprint = await fingerprintSecret(bundle.llm.apiKey);
+    meta.llmProvider = bundle.llm.provider;
+    meta.llmModel = bundle.llm.model;
+  }
 
   localStorage.setItem(VAULT_KEY, JSON.stringify(envelope));
   localStorage.setItem(VAULT_META_KEY, JSON.stringify(meta));

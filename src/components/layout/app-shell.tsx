@@ -13,14 +13,17 @@ import {
   ShieldCheck,
   ShieldAlert,
   Menu,
+  Sparkles,
   Workflow,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AICopilotDrawer } from "@/components/copilot/AICopilotDrawer";
 import { useCredentials } from "@/store/useCredentials";
 import { useBuilder } from "@/store/useBuilder";
+import { useCopilot } from "@/store/useCopilot";
 import { compileProject } from "@/lib/compiler";
 
 const NAV_ITEMS = [
@@ -111,6 +114,7 @@ function CredentialStatus() {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const copilotOpen = useCopilot((state) => state.open);
 
   const hydrateCredentials = useCredentials((state) => state.load);
   const hydrateBuilder = useBuilder((state) => state.hydrate);
@@ -202,14 +206,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <div className="mt-auto pt-4">
+          <div className="mt-auto space-y-3 pt-4">
+            {/* The copilot is the app's headline feature, so its launcher lives in
+                the sidebar rather than only as a floating button. */}
+            <button
+              type="button"
+              onClick={() => useCopilot.getState().setOpen(true)}
+              className="flex w-full items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/10"
+            >
+              <Sparkles className="size-4 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs font-semibold">AI Bot Engineer</span>
+                <span className="block text-[10px] text-muted-foreground">
+                  Describe a feature, get working TBL
+                </span>
+              </span>
+            </button>
+
             <CredentialStatus />
           </div>
         </aside>
 
-        {/* ---- Main content ---- */}
-        <main className="min-w-0 flex-1">{children}</main>
+        {/* ---- Main content ----
+            On wide screens the copilot drawer sits beside the content rather than
+            over it, so nothing is hidden while the user reads generated code. */}
+        <main
+          className={cn(
+            "min-w-0 flex-1 transition-[padding] duration-200",
+            copilotOpen && "xl:pr-[26rem]",
+          )}
+        >
+          {children}
+        </main>
       </div>
+
+      <AICopilotDrawer />
     </div>
   );
 }

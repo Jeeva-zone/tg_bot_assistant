@@ -150,6 +150,19 @@ export function createCommand(apiKey: string, botId: number, body: CreateCommand
   });
 }
 
+export function updateCommand(
+  apiKey: string,
+  botId: number,
+  commandId: number,
+  body: Partial<CreateCommandRequest>,
+) {
+  return request<{ command: unknown }>(`/api/tbh/bots/${botId}/commands/${commandId}`, {
+    apiKey,
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export function deleteAllCommands(apiKey: string, botId: number) {
   return request<unknown>(`/api/tbh/bots/${botId}/commands`, { apiKey, method: "DELETE" });
 }

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader } from "@/components/layout/app-shell";
+import { LlmConfigCard } from "@/components/setup/llm-config-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -367,6 +368,8 @@ function SetupPageInner() {
           </Card>
 
           <ApiReachability />
+
+          <LlmConfigCard />
         </div>
 
         {/* ---------- Stored credentials ---------- */}

@@ -10,7 +10,7 @@
  */
 
 import { create } from "zustand";
-import type { CredentialBundle, TelegramCredentials, TbhCredentials } from "@/types/builder";
+import type { CredentialBundle, TelegramCredentials, TbhCredentials, LlmCredentials } from "@/types/builder";
 import * as vault from "@/lib/vault";
 import { maskSecret } from "@/lib/crypto";
 import * as api from "@/lib/client-api";
@@ -32,6 +32,8 @@ interface CredentialsState {
 
   setTelegram: (value: TelegramCredentials) => void;
   setTelebothost: (value: TbhCredentials) => void;
+  /** Attach or replace the copilot's model configuration. */
+  setLlm: (value: LlmCredentials | undefined) => void;
 
   /** Convenience accessors — return `""` when locked. */
   apiKey: () => string;
@@ -103,6 +105,12 @@ export const useCredentials = create<CredentialsState>((set, get) => ({
     const current = get().credentials;
     if (!current) return;
     set({ credentials: { ...current, telebothost: value } });
+  },
+
+  setLlm: (value) => {
+    const current = get().credentials;
+    if (!current) return;
+    set({ credentials: { ...current, llm: value } });
   },
 
   apiKey: () => get().credentials?.telebothost.apiKey ?? "",

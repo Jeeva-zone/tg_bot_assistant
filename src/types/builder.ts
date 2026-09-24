@@ -238,9 +238,27 @@ export interface TbhCredentials {
   validatedAt: string;
 }
 
+/**
+ * The copilot's model configuration.
+ *
+ * The API key is a real secret, so it lives in the same encrypted vault as the
+ * Telegram and TeleBotHost credentials rather than in plain localStorage.
+ */
+export interface LlmCredentials {
+  provider: "openai" | "anthropic" | "custom";
+  apiKey: string;
+  model: string;
+  /** Only used for OpenAI-compatible providers. */
+  baseUrl?: string;
+  /** Set once the key has been proven to work. */
+  validatedAt?: string;
+}
+
 export interface CredentialBundle {
   telegram: TelegramCredentials;
   telebothost: TbhCredentials;
+  /** Optional — the app works without a model, but the copilot needs one. */
+  llm?: LlmCredentials;
 }
 
 // ---------------------------------------------------------------------------

@@ -22,12 +22,14 @@ your bot.
 | **Multi-step forms** | Sequential prompts with per-field validation, persisted in TeleBotHost's built-in `db` |
 | **API blocks** | External HTTP GET/POST/PUT/PATCH/DELETE with env-backed secret headers and response binding |
 | **Deployment** | Register or reuse a bot, upload commands with rate-limit-aware pacing, toggle it running, live progress log |
+| **AI Bot Engineer** | Right-hand copilot: describe a feature in plain language, get working TBL with a diff against what is deployed, and ship it in one click |
 | **Analytics** | Online/offline status, user statistics, and a polled execution log with error stacks |
 
-There are two ways to author a bot, and they share the same compiler targets and deploy engine:
+There are three ways to author a bot, and they all target the same TBL commands and share one deploy engine:
 
 - **Bot Builder** (`/builder`) — a form per command. Better for precise, list-oriented editing.
 - **Workflow Canvas** (`/workflow`) — a node graph. Better for branching logic and seeing the flow.
+- **AI Bot Engineer** (any page) — describe it in words, or insert a hand-written template.
 
 ---
 
@@ -245,6 +247,124 @@ a TBL global (`message`, `user`, `db`, …) with a variable name.
 
 ---
 
+## The AI Bot Engineer copilot
+
+A right-hand drawer (`AICopilotDrawer.tsx`) that turns a plain-language request into a
+TeleBotHost command. It is mounted in the app shell, so the conversation survives moving
+between pages.
+
+### It is context-aware
+
+On every turn the drawer reads the live command list from TeleBotHost and summarises it
+inside a token budget: which triggers are taken, which `db` keys and `process.env` names
+other commands already use, how many commands exist, whether the key can write. That is
+what stops it producing a second `/start` — TBL matches exactly one command per trigger, so
+a duplicate would be silently dead.
+
+`lib/copilot/context.ts` caps the number of commands and truncates each code preview, and
+**never reads secret values** — only key names. There is a test asserting the serialised
+context contains no `sk_` prefix.
+
+### The system prompt
+
+`lib/copilot/system-prompt.ts` is the highest-leverage file in the feature. A vague prompt
+produces plausible TBL that fails at runtime, so it encodes the **actual** execution model
+rather than a generic "write JavaScript" ask:
+
+- **TBL is JavaScript** with no imports; a command's script runs **once per message** and
+  then the sandbox goes away. There is no memory between runs except `db`.
+- The full global table — `Bot`, `Api`, `db.user`/`db.bot`/`db.global`, `user`, `chat`,
+  `message`, `params`, `plan`, `process.env`, `msg` — and **only** those.
+- The argument shapes that are easy to get wrong: `Bot.sendMessage(text, options?)` takes
+  text first; `Api.sendMessage({ … })` takes one object and fills in `chat_id`.
+- Inline keyboards must be built **in code** via `reply_markup`, because the `keyboard`
+  field only carries reply keyboards.
+- `need_reply` **re-runs the whole script**, so a multi-step flow needs a `db` step counter
+  or it will replay step 0 forever.
+- Routing order, and the fact that there is **no regex routing** and **one `*` per bot**.
+- Broadcast commands run in a restricted context (no outbound HTTP, no `sleep`).
+
+It also carries a self-check list the model is told to run before answering.
+
+### The output contract
+
+The model must return one JSON object and nothing else:
+
+```json
+{
+  "explanation": "What it does, in plain language.",
+  "command_name": "/start",
+  "tbl_code": "await Api.sendMessage({ text: \"Hi\" })",
+  "answer": "optional text sent before the logic",
+  "parse_mode": "Markdown",
+  "need_reply": false,
+  "aliases": ["Start"],
+  "keyboard": [["Help", "About"]],
+  "notes": ["Requires STRIPE_KEY in the environment variables."]
+}
+```
+
+Models are unreliable about this. They wrap it in markdown fences, prepend "Here you go!",
+or return `tbl_code` as an array of lines. So `lib/copilot/schema.ts` is **tolerant on
+input, strict on output**: it extracts the first balanced `{ … }` (string-aware, so a `}`
+inside a TBL string literal does not end it early), repairs a small set of known deviations,
+then validates. Anything it cannot repair becomes a clear message — and the raw reply is
+always shown, so the user can see what the model actually said.
+
+### Deploy — with the corrected API shape
+
+`lib/copilot/deploy.ts` writes the command to TeleBotHost. **Three details of the commonly
+assumed API are wrong**, and each one produces a silent 404 or 401:
+
+| Assumed | Actual (verified against the live OpenAPI document) |
+|---|---|
+| `POST /api/v1/bots/{bot_id}/commands` | `POST /api/v1/bot/{botid}/commands` — **singular `bot`** |
+| `X-Tbh-Api-Key: <key>` | `X-Api-Key: <key>` or `Authorization: Bearer <key>` |
+| `{ name, logic, keyboard }` | `{ name, **code**, answer, parse_mode, keyboard, … }` |
+
+The code field is `code`, not `logic` — there is no `logic` field in the schema. There is a
+regression test asserting the payload uses `code` and never `logic`, so this cannot silently
+regress.
+
+The handler also **upserts** rather than blindly creating. Redeploying an edited command
+updates the existing one in place; creating a second command with the same trigger would
+leave the bot with two entries where only one ever runs.
+
+The **Payload** tab on every generated command shows exactly what will be sent, so the
+button is never a black box.
+
+### Diff view
+
+`lib/diff.ts` is an LCS over lines. Scripts here are small, so the O(n·m) table is not worth
+optimising away — and it lets modified lines render as remove+add pairs instead of an opaque
+block. Long runs of unchanged code collapse to a `⋯ N unchanged lines ⋯` marker so a
+one-line edit in a long script stays visible.
+
+### Suggestion chips and templates
+
+Two different things:
+
+- **Chips** are prompts. Clicking one sends a *detailed brief* to the model — a bare label
+  like "Add Lead Generation Form" gives it far too little to work with.
+- **Starter templates** are hand-written, verified TBL covering a welcome menu, help menu,
+  usage counter, lead form, owner broadcast and wildcard fallback. They produce the same
+  `CopilotArtifact` shape the model returns, so they flow through the identical
+  preview → diff → deploy path — and they work **with no model configured at all**.
+
+### Model configuration
+
+Optional. Supports OpenAI, Anthropic, and any OpenAI-compatible endpoint (Groq, OpenRouter,
+Together, DeepSeek, Ollama, LM Studio) with a custom base URL. The key goes into the same
+AES-GCM vault as the other credentials and is sent per-request in a header.
+
+**Hosting caveat:** the LLM call goes through `/api/copilot/chat`, so a serverless host's
+request timeout applies. Netlify's synchronous function limit is shorter than a large
+model's response time on a big prompt, so a **smaller, faster model is the reliable
+choice** — the system prompt is deliberately compact to keep latency down. The client
+turns a 502/504 into a specific message saying so, rather than a generic network error.
+
+---
+
 ## Project structure
 
 ```
@@ -266,12 +386,20 @@ src/
 │       ├── .../commands/[id]/    Get, update, delete
 │       ├── .../logs/             Read, clear
 │       ├── .../analytics/        Usage stats
+│       ├── copilot/chat/         LLM proxy (key in a header, never persisted)
 │       ├── selftest/             Dev-only compiler tests (404 in production)
-│       └── selftest/workflow/    Dev-only graph-compiler tests
+│       ├── selftest/workflow/    Dev-only graph-compiler tests
+│       └── selftest/copilot/     Dev-only copilot logic tests
 ├── components/
 │   ├── ui/                       shadcn/ui primitives
 │   ├── layout/                   App shell, page header
+│   ├── setup/                    Model configuration card
 │   ├── builder/                  Trigger/response/keyboard/flow panels, code preview
+│   ├── copilot/
+│   │   ├── AICopilotDrawer.tsx   The chat drawer
+│   │   ├── command-card.tsx      Preview + diff + deploy for one command
+│   │   ├── diff-view.tsx         Rendered line diff
+│   │   └── code-block.tsx        Syntax-highlighted code
 │   └── workflow/
 │       ├── block-palette.tsx     Draggable script-block library
 │       ├── workflow-canvas.tsx   React Flow canvas
@@ -288,61 +416,83 @@ src/
 │   ├── workflow-compiler.ts      Node graph → TBL
 │   ├── workflow-blocks.ts        Block catalog, defaults, field validation
 │   ├── workflow-labels.ts        Shared enum labels
+│   ├── diff.ts                   Line-level LCS diff
 │   ├── deploy-engine.ts          Rate-limit-aware deployment orchestration
 │   ├── tbh-client.ts             Server-side TeleBotHost client
 │   ├── telegram-client.ts        Server-side getMe
-│   └── client-api.ts             Browser → proxy routes
+│   ├── client-api.ts             Browser → proxy routes
+│   └── copilot/
+│       ├── system-prompt.ts      The TBL rulebook + output contract
+│       ├── schema.ts             Tolerant parser + keyboard normaliser
+│       ├── context.ts            Budgeted bot-context summariser
+│       ├── providers.ts          OpenAI-compatible + Anthropic adapters
+│       ├── deploy.ts             TeleBotHost command writer (upsert)
+│       ├── templates.ts          Hand-written TBL templates + chips
+│       └── highlight.ts          Dependency-free JS tokeniser
 ├── store/
 │   ├── useCredentials.ts         In-memory credentials + vault metadata
 │   ├── useBuilder.ts             Command-list project state
-│   └── useWorkflow.ts            Workflow graph state
+│   ├── useWorkflow.ts            Workflow graph state
+│   └── useCopilot.ts             Chat state
 └── types/
     ├── telegram.ts               Telegram Bot API subset
     ├── telebothost.ts            TeleBotHost API (from the live OpenAPI doc)
     ├── builder.ts                Command-list builder model
-    └── workflow.ts               Workflow block & graph model
+    ├── workflow.ts               Workflow block & graph model
+    └── copilot.ts                Copilot contract & context model
 ```
 
 ---
 
 ## Verification
 
-Both compilers are verified in two layers, because they catch different classes of bug.
+Three test suites, 78 behavioural checks in total. Every one **executes** the code under
+test rather than asserting on its shape.
 
 ```bash
 npm run dev
 
-# Command-list compiler — 14 behavioural checks
+# Command-list compiler — 14 checks
 curl -s http://localhost:3000/api/selftest | jq .behaviour
 
-# Workflow graph compiler — 19 behavioural checks
+# Workflow graph compiler — 19 checks
 curl -s http://localhost:3000/api/selftest/workflow | jq .behaviour
+
+# Copilot logic — 45 checks
+curl -s http://localhost:3000/api/selftest/copilot | jq .behaviour
 ```
 
-Both endpoints are **dev-only** (404 in production). Each compiles a fixture covering every
-block type, then:
+All three endpoints are **dev-only** (404 in production).
 
-1. **Syntax-checks** every generated script.
-2. **Executes** it against mocked `Bot`, `Api`, `db`, `user`, `chat`, `message`, `fetch` and
-   `process` globals, asserting on real behaviour.
+**The compiler suites** syntax-check every generated script, then execute it against mocked
+`Bot`, `Api`, `db`, `user`, `chat`, `message`, `fetch` and `process` globals, asserting on
+real behaviour: that a condition takes the correct branch (case-insensitively), that a state
+machine asks, rejects invalid input *without advancing*, resumes with the captured value
+interpolated and clears its record; that an API failure halts the flow; that the dispatcher
+matches a regex and falls through to the wildcard; and that cycles, orphans, bare triggers
+and TBL-global shadowing are all rejected.
 
-The workflow suite asserts, among other things, that a condition takes the correct branch
-(including case-insensitively), that a state machine asks, rejects invalid input **without
-advancing**, resumes with the captured value interpolated, and clears its record; that an API
-failure halts the flow; that the dispatcher matches a regex and falls through to the wildcard;
-and that cycles, orphans, bare triggers and TBL-global shadowing are all rejected.
+**The copilot suite** covers the tolerant parser (fences, prose, arrays, nesting, braces
+inside string literals, malformed replies), the keyboard normaliser, the diff engine
+(line numbers, collapsing, CRLF), the tokeniser (round-trip fidelity), the context builder
+(budgets, variable extraction, and a check that no secret ever reaches the prompt), and the
+deploy payload.
 
-Layer 2 is what matters. Real bugs this caught during development:
+### Why execution, not inspection
 
-| Bug | Why the syntax check missed it |
+Syntax checking is not enough. These bugs all produce **valid JavaScript that silently
+misbehaves**, and every one was caught only by running the generated code:
+
+| Bug | Why a syntax check missed it |
 |---|---|
 | The chain walk started *at* the trigger, so every command compiled to empty code | Valid (empty) JavaScript |
-| `{{user.first_name}}` and `{{apiResponse.status}}` were emitted as literal text | Valid string literals |
+| `{{user.first_name}}` and `{{apiResponse.status}}` emitted as literal text | Valid string literals |
 | A validator referenced `val` while the state machine declared `__val` | Parses fine; throws only at runtime |
-| A key array was emitted as a *string*, so `__KEYS[i]` indexed characters | Valid syntax |
+| A key array emitted as a *string*, so `__KEYS[i]` indexed characters | Valid syntax |
 
-None of these are visible by reading the output; all of them produce a bot that silently
-misbehaves. Hence executing the generated code rather than trusting it.
+The copilot suite exists for the same reason: the model is non-deterministic and cannot be
+asserted against, but everything *around* it can — and the payload test now guards the
+`code` vs `logic` field name permanently.
 
 ---
 
