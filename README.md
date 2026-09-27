@@ -7,6 +7,13 @@ Design commands, keyboards and multi-step forms in the browser — the app gener
 real TBL JavaScript, uploads it through the TeleBotHost Developer API, and starts
 your bot.
 
+## Live demo
+
+**→ [tg-bot-assistant.vercel.app](https://tg-bot-assistant.vercel.app)**
+
+Deployed on Vercel from this repository. No sign-in, no configuration — open it and paste
+your BotFather token and TeleBotHost key to try it.
+
 ## Deploy your own
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
@@ -523,6 +530,10 @@ The app runs on **Vercel or Netlify** without code changes. Security headers liv
 and encrypted in their browser, so there is no server-side secret to configure.
 
 ### Vercel (recommended)
+
+This project's own live instance:
+
+**→ [https://tg-bot-assistant.vercel.app](https://tg-bot-assistant.vercel.app)**
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FJeeva-zone%2Ftg_bot_assistant)
 

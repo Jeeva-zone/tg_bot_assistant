@@ -69,3 +69,5 @@ desktop.ini
 logs/
 *.log
 tmp/
+
+.vercel
